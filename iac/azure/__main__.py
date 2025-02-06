@@ -5,6 +5,15 @@ from pulumi_azure_native import containerservice
 import pulumi_azuread as azuread
 import pulumi_tls as tls
 import pulumi_kubernetes as k8s
+import pulumi
+from pulumi_kubernetes.apps.v1 import Deployment
+from pulumi_kubernetes.core.v1 import Service
+from pulumi_kubernetes.networking.v1 import Ingress
+from pulumi_kubernetes_ingress_nginx import (
+    IngressController,
+    ControllerArgs,
+    ControllerPublishServiceArgs,
+)
 
 
 cluster_name = "krapdev"
@@ -63,6 +72,9 @@ identity = azure_native.managedidentity.UserAssignedIdentity(
 kubernetes_cluster = azure_native.containerservice.ManagedCluster(
     f"aks-{cluster_name}",
     resource_group_name=resource_group.name,
+    network_profile=azure_native.containerservice.ContainerServiceNetworkProfileArgs(
+        network_plugin="kubenet",
+    ),
     location=resource_group.location,
     dns_prefix=f"dns-{cluster_name}",
     agent_pool_profiles=[
@@ -130,5 +142,57 @@ argo_url = (
 )
 
 argocd = k8s.yaml.ConfigFile(
-    name="argocd", file=argo_url, transformations=[replace_namespace]
+    name="argocd",
+    file=argo_url,
+    transformations=[replace_namespace],
+    opts=pulumi.ResourceOptions(depends_on=argocd_namespace),
+)
+
+
+# Install the NGINX ingress controller to our cluster. The controller
+# consists of a Pod and a Service. Install it and configure the controller
+# to publish the load balancer IP address on each Ingress so that
+# applications can depend on the IP address of the load balancer if needed.
+nginx = IngressController(
+    "nginx",
+    controller=ControllerArgs(
+        publish_service=ControllerPublishServiceArgs(
+            enabled=True,
+        ),
+    ),
+    opts=pulumi.ResourceOptions(depends_on=kubernetes_cluster),
+)
+
+
+# Next, expose the app using an Ingress.
+argocd_ingress = Ingress(
+    "argocd-ingress",
+    opts=pulumi.ResourceOptions(depends_on=nginx),
+    metadata={
+        "name": "argocd-ingress",
+        "annotations": {
+            "kubernetes.io/ingress.class": "nginx",
+        },
+    },
+    spec={
+        "rules": [
+            {
+                # Replace this with your own domain!
+                "http": {
+                    "paths": [
+                        {
+                            "pathType": "Prefix",
+                            "path": "/",
+                            "backend": {
+                                "service": {
+                                    "name": "argocd-server",
+                                    "port": {"number": 80},
+                                },
+                            },
+                        }
+                    ],
+                },
+            },
+        ],
+    },
 )

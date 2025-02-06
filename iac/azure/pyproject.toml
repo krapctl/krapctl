@@ -10,4 +10,5 @@ dependencies = [
     "pulumi-random>=4.17.0",
     "pulumi-tls>=5.1.0",
     "pulumi-kubernetes>=4.21.1",
+    "pulumi-kubernetes-ingress-nginx>=0.1.2",
 ]

@@ -28,6 +28,7 @@ dependencies = [
     { name = "pulumi-azure-native" },
     { name = "pulumi-azuread" },
     { name = "pulumi-kubernetes" },
+    { name = "pulumi-kubernetes-ingress-nginx" },
     { name = "pulumi-random" },
     { name = "pulumi-tls" },
 ]
@@ -38,6 +39,7 @@ requires-dist = [
     { name = "pulumi-azure-native", specifier = ">=2.11.0" },
     { name = "pulumi-azuread", specifier = ">=6.2.0" },
     { name = "pulumi-kubernetes", specifier = ">=4.21.1" },
+    { name = "pulumi-kubernetes-ingress-nginx", specifier = ">=0.1.2" },
     { name = "pulumi-random", specifier = ">=4.17.0" },
     { name = "pulumi-tls", specifier = ">=5.1.0" },
 ]
@@ -216,6 +218,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/1e/21/0ae865fd2fbc6ec554fdefea94304aec94782d02edfc619cd109d04398dc/pulumi_kubernetes-4.21.1.tar.gz", hash = "sha256:30eaf35c7c2eb74d16bd00afd7133d931ae0d3d1be2703bc661ffaefba79434e", size = 1657053 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3a/39/7f0e6faa91d809680ceaf43c299479bcec1754e58436acce6004a3d4252c/pulumi_kubernetes-4.21.1-py3-none-any.whl", hash = "sha256:4e55008e9c5821f769381c7b1afb6fb05b9fbdcd5cd1d27b3ff3bf32abb8d04d", size = 2613080 },
+]
+
+[[package]]
+name = "pulumi-kubernetes-ingress-nginx"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "parver" },
+    { name = "pulumi" },
+    { name = "pulumi-kubernetes" },
+    { name = "semver" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f9/2f/87126377307daf2b35770b6d10231df2a89d0fe6baeef2c94828a3da2399/pulumi_kubernetes_ingress_nginx-0.1.2.tar.gz", hash = "sha256:97cbd0e9e581395e7284cddc91f2c26d082a2aa0ea7e7f58baf202ec49b21cd4", size = 34730 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/ab/6d687087fc4e0133ea3287537de3d4bde89dd54e8dbcce7ea3579c64b483/pulumi_kubernetes_ingress_nginx-0.1.2-py3-none-any.whl", hash = "sha256:83c365a6a793b47be4ad494335d30cd1fbda9e00d49effe5f6374e133da81e94", size = 37047 },
 ]
 
 [[package]]
