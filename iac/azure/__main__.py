@@ -1,62 +1,134 @@
+import base64
 import pulumi
 import pulumi_azure_native as azure_native
+from pulumi_azure_native import containerservice
+import pulumi_azuread as azuread
+import pulumi_tls as tls
+import pulumi_kubernetes as k8s
+
+
+cluster_name = "krapdev"
+config = pulumi.Config()
+
 
 # Resource Group
-resource_group = azure_native.resources.ResourceGroup("resourceGroup")
+resource_group = azure_native.resources.ResourceGroup(
+    f"rg-{cluster_name}", location="uksouth"
+)
+
+
+# Create an AD service principal
+ad_app = azuread.Application("aks", display_name="aks")
+ad_sp = azuread.ServicePrincipal("aksSp", client_id=ad_app.client_id)
+
+# Create the Service Principal Password
+ad_sp_password = azuread.ServicePrincipalPassword(
+    "aksSpPassword", service_principal_id=ad_sp.id, end_date="2099-01-01T00:00:00Z"
+)
+
+# Generate an SSH key
+ssh_key = tls.PrivateKey("ssh-key", algorithm="RSA", rsa_bits=4096)
+
 
 # Azure Storage Account
-storage_account = azure_native.storage.StorageAccount("storageAccount",
+storage_account = azure_native.storage.StorageAccount(
+    f"st{cluster_name}",
     resource_group_name=resource_group.name,
     location=resource_group.location,
     sku=azure_native.storage.SkuArgs(
         name=azure_native.storage.SkuName.STANDARD_LRS,
     ),
-    kind=azure_native.storage.Kind.STORAGE_V2)
+    kind=azure_native.storage.Kind.STORAGE_V2,
+)
 
 # Azure Container Registry
-container_registry = azure_native.containerregistry.Registry("containerRegistry",
+container_registry = azure_native.containerregistry.Registry(
+    f"acr{cluster_name}",
     resource_group_name=resource_group.name,
     location=resource_group.location,
     sku=azure_native.containerregistry.SkuArgs(
         name="Standard",
     ),
-    admin_user_enabled=True)
+    admin_user_enabled=True,
+)
 
 # Managed Identity for AKS
-identity = azure_native.managedidentity.UserAssignedIdentity("identity",
-    resource_group_name=resource_group.name,
-    location=resource_group.location)
-
-# AKS Cluster with Managed Identity
-kubernetes_cluster = azure_native.containerservice.ManagedCluster("kubernetesCluster",
+identity = azure_native.managedidentity.UserAssignedIdentity(
+    f"id{cluster_name}",
     resource_group_name=resource_group.name,
     location=resource_group.location,
-    dns_prefix="k8s",
-    agent_pool_profiles=[azure_native.containerservice.ManagedClusterAgentPoolProfileArgs(
-        name="agentpool",
-        count=1,
-        vm_size="Standard_DS2_v2",
-        os_type="Linux"
-    )],
-    identity=azure_native.containerservice.ManagedClusterIdentityArgs(
-        type="UserAssigned",
-        user_assigned_identities={identity.id: {}}
-    ),
+)
+
+# AKS Cluster with Managed Identity
+kubernetes_cluster = azure_native.containerservice.ManagedCluster(
+    f"aks-{cluster_name}",
+    resource_group_name=resource_group.name,
+    location=resource_group.location,
+    dns_prefix=f"dns-{cluster_name}",
+    agent_pool_profiles=[
+        azure_native.containerservice.ManagedClusterAgentPoolProfileArgs(
+            name="agentpool",
+            count=1,
+            vm_size="Standard_DS2_v2",
+            os_type="Linux",
+            mode="System",
+            type="VirtualMachineScaleSets",
+        )
+    ],
+    # identity=azure_native.containerservice.UserAssignedIdentityArgs(identity.client_id),
+    # identity=azure_native.containerservice.ManagedClusterIdentityArgs(
+    #     type="UserAssigned", user_assigned_identities={identity.id: {}}
+    # ),
     service_principal_profile=azure_native.containerservice.ManagedClusterServicePrincipalProfileArgs(
-        client_id="your-client-id",
-        secret="your-client-secret"
+        client_id=ad_app.client_id, secret=ad_sp_password.value
     ),
     linux_profile=azure_native.containerservice.ContainerServiceLinuxProfileArgs(
         admin_username="testuser",
         ssh=azure_native.containerservice.ContainerServiceSshConfigurationArgs(
-            public_keys=[azure_native.containerservice.ContainerServiceSshPublicKeyArgs(
-                key_data="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCy1+zBRhr+3L1dHrqFYeyLLAAvv5N+WKLTCXYTE9TcMeP4wCe5cwPzuy5vj1giZdbnGs2NMRwk1qq4yc8FOB5MgIjXLo7bZGGLi/J3idduIDcyZ+8b8X8Q2mPGeJWin1+XlENeCKVoYQTyZ4yPMBNJQyAQpyBVKD0ghXbQwOzTiDQp5JZEOh5xydAs7yT8//ZeQX2ZOfaCovSu771q5SDE58kSud13GLPcariS5OSZkIgMCFd57QJBP5Ma2K4Gx/JcW4GYcUvXvcFftbvO2n/jXFkTw0OndHZTxXS3JGAkR6Mg12pD3iA6H9QcJuTQ== user@test"
-            )]
-        )
-    ))
+            public_keys=[
+                azure_native.containerservice.ContainerServiceSshPublicKeyArgs(
+                    key_data=ssh_key.public_key_openssh,
+                )
+            ]
+        ),
+    ),
+)
 
-# Export the kubeconfig and registry credentials
-pulumi.export("kubeconfig", kubernetes_cluster.kube_configs[0].value)
-pulumi.export("registry_login_server", container_registry.login_server)
-pulumi.export("registry_admin_username", container_registry.admin_user_enabled.username)
-pulumi.export("registry_admin_password", container_registry.admin_user_enabled.password)
+
+creds = containerservice.list_managed_cluster_user_credentials_output(
+    resource_group_name=resource_group.name, resource_name=kubernetes_cluster.name
+)
+encoded = creds.kubeconfigs[0].value
+kubeconfig = encoded.apply(lambda enc: base64.b64decode(enc).decode())
+pulumi.export("kubeconfig", kubeconfig)
+
+
+k8s_provider = k8s.Provider("k8s-provider", kubeconfig=kubeconfig)
+
+# Create a new namespace for ArgoCD
+argocd_namespace = k8s.core.v1.Namespace(
+    resource_name="argocd",
+    metadata={
+        "name": "argocd",
+    },
+    opts=pulumi.ResourceOptions(provider=k8s_provider),
+)
+
+###############################################################################
+# Install ArgoCD
+###############################################################################
+
+
+def replace_namespace(obj, opts):
+    if obj["kind"] == "Namespace":
+        obj["metadata"]["name"] = "argocd"
+    return obj
+
+
+argo_url = (
+    "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
+)
+
+argocd = k8s.yaml.ConfigFile(
+    name="argocd", file=argo_url, transformations=[replace_namespace]
+)
