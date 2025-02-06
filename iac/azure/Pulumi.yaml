@@ -1,0 +1,10 @@
+name: krapctl
+runtime:
+  name: python
+  options:
+    toolchain: uv
+description: Kubernetes Research Analytics Platform
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: https://www.pulumi.com/ai/api/project/3d833962-2b38-4b33-94a7-f70c6271230f.zip
