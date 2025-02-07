@@ -117,82 +117,76 @@ pulumi.export("kubeconfig", kubeconfig)
 
 k8s_provider = k8s.Provider("k8s-provider", kubeconfig=kubeconfig)
 
-# Create a new namespace for ArgoCD
-argocd_namespace = k8s.core.v1.Namespace(
-    resource_name="argocd",
-    metadata={
-        "name": "argocd",
-    },
-    opts=pulumi.ResourceOptions(provider=k8s_provider),
-)
 
 ###############################################################################
 # Install ArgoCD
 ###############################################################################
 
-
-def replace_namespace(obj, opts):
-    if obj["kind"] == "Namespace":
-        obj["metadata"]["name"] = "argocd"
-    return obj
-
-
-argo_url = (
-    "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
-)
-
-argocd = k8s.yaml.ConfigFile(
-    name="argocd",
-    file=argo_url,
-    transformations=[replace_namespace],
-    opts=pulumi.ResourceOptions(depends_on=argocd_namespace),
-)
+# Create a new namespace for ArgoCD
+# argocd_namespace = k8s.core.v1.Namespace(
+#     resource_name="argocd",
+#     metadata={
+#         "name": "argocd",
+#     },
+#     opts=pulumi.ResourceOptions(provider=k8s_provider),
+# )
 
 
-# Install the NGINX ingress controller to our cluster. The controller
-# consists of a Pod and a Service. Install it and configure the controller
-# to publish the load balancer IP address on each Ingress so that
-# applications can depend on the IP address of the load balancer if needed.
-nginx = IngressController(
-    "nginx",
-    controller=ControllerArgs(
-        publish_service=ControllerPublishServiceArgs(
-            enabled=True,
-        ),
-    ),
-    opts=pulumi.ResourceOptions(depends_on=kubernetes_cluster),
-)
+# Use kubectl or python client to install ArgoCD
+# This keeps the number of Pulimi resources within the free tier
+# kubectl create namespace argocd
+# kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+# Alternatively convert this entire setup to bicep but this will require bootstrapping for state management that
+# Pulumu provides out of the box
+
+# # Install the NGINX ingress controller to our cluster. The controller
+# # consists of a Pod and a Service. Install it and configure the controller
+# # to publish the load balancer IP address on each Ingress so that
+# # applications can depend on the IP address of the load balancer if needed.
+# nginx = IngressController(
+#     "nginx",
+#     controller=ControllerArgs(
+#         publish_service=ControllerPublishServiceArgs(
+#             enabled=True,
+#         ),
+#     ),
+#     opts=pulumi.ResourceOptions(depends_on=kubernetes_cluster, provider=k8s_provider),
+# )
 
 
-# Next, expose the app using an Ingress.
-argocd_ingress = Ingress(
-    "argocd-ingress",
-    opts=pulumi.ResourceOptions(depends_on=nginx),
-    metadata={
-        "name": "argocd-ingress",
-        "annotations": {
-            "kubernetes.io/ingress.class": "nginx",
-        },
-    },
-    spec={
-        "rules": [
-            {
-                # Replace this with your own domain!
-                "http": {
-                    "paths": [
-                        {
-                            "pathType": "Prefix",
-                            "path": "/",
-                            "backend": {
-                                "service": {
-                                    "name": "argocd-server",
-                                    "port": {"number": 80},
-                                },
-                            },
-                        }
-                    ],
-                },
-            },
-        ],
-    },
-)
+# # Next, expose the app using an Ingress.
+# argocd_ingress = Ingress(
+#     "argocd-ingress",
+#     opts=pulumi.ResourceOptions(depends_on=nginx, provider=k8s_provider),
+#     metadata={
+#         "name": "argocd-ingress",
+#         "annotations": {
+#             "kubernetes.io/ingress.class": "nginx",
+#             "nginx.ingress.kubernetes.io/force-ssl-redirect": "true",
+#             "nginx.ingress.kubernetes.io/ssl-passthrough": "true",
+#         },
+#     },
+#     spec={
+#         "rules": [
+#             {
+#                 # Replace this with your own domain!
+#                 # "host": "argocd.landertre-dev.org",
+#                 "http": {
+#                     "paths": [
+#                         {
+#                             "pathType": "Prefix",
+#                             "path": "/",
+#                             "backend": {
+#                                 "service": {
+#                                     "name": "argocd-server",
+#                                     "port": {"number": 80},
+#                                 },
+#                             },
+#                         }
+#                     ],
+#                 },
+#             },
+#         ],
+#     },
+# )
